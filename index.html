@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Stack Builder</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #111;
+      }
+      canvas {
+        display: block;
+      }
+      #overlay {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        font-family: sans-serif;
+        font-size: 24px;
+        text-align: center;
+        z-index: 5;
+        user-select: none;
+      }
+      #gameover {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        color: white;
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        font-size: 28px;
+        z-index: 10;
+        display: none;
+      }
+      button {
+        background: #00ff99;
+        border: none;
+        padding: 10px 20px;
+        font-size: 18px;
+        cursor: pointer;
+        margin-top: 10px;
+        border-radius: 5px;
+        transition: all 0.2s ease;
+      }
+      button:hover {
+        background: #00cc77;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      Tap / Click untuk Drop
+      <br />
+      <span id="score" style="font-size:18px;">Score: 0</span>
+    </div>
+
+    <div id="gameover">
+      <div>💥 Game Over!</div>
+      <div id="finalScore" style="font-size:18px;margin-top:8px;"></div>
+      <button id="restartBtn">Restart</button>
+    </div>
+
+    <script type="module">
+      import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165/build/three.module.js";
+      import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
+
+      let scene, camera, renderer, world;
+      let blocks = [];
+      let currentBlock = null;
+      let gameOver = false;
+      let score = 0;
+      let pendingGameOverTimeout = null;
+
+      const blockSize = { x: 3, y: 1, z: 3 };
+      let currentY = 0.25;
+
+      let swingTime = 0;
+      const swingSpeed = 1.5;
+      const swingAmplitude = 5;
+
+      let groundBody = null;
+
+      init();
+      animate();
+
+      function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+
+        camera = new THREE.PerspectiveCamera(
+          60,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        camera.position.set(7, 10, 12);
+        camera.lookAt(0, 2, 0);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+
+        // ground
+        groundBody = new CANNON.Body({
+          mass: 0,
+          shape: new CANNON.Box(new CANNON.Vec3(10, 0.1, 10)),
+          position: new CANNON.Vec3(0, -0.1, 0),
+        });
+        groundBody.name = "ground";
+        world.addBody(groundBody);
+
+        const groundMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(20, 0.2, 20),
+          new THREE.MeshStandardMaterial({ color: 0x222222 })
+        );
+        groundMesh.position.y = -0.1;
+        scene.add(groundMesh);
+
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(5, 10, 5);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+        // Inisialisasi game state awal
+        blocks = [];
+        currentBlock = null;
+        gameOver = false;
+        score = 0;
+        currentY = 0.25;
+        document.getElementById("score").textContent = `Score: ${score}`;
+
+        spawnBase();
+        spawnMovingBlock();
+
+        renderer.domElement.addEventListener("pointerdown", dropBlock);
+        window.addEventListener("resize", onWindowResize);
+        document.getElementById("restartBtn").addEventListener("click", restartGame);
+      }
+
+      function spawnBase() {
+        const geo = new THREE.BoxGeometry(blockSize.x, blockSize.y, blockSize.z);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x00ff99 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.y = currentY;
+        scene.add(mesh);
+
+        const body = new CANNON.Body({
+          mass: 0,
+          shape: new CANNON.Box(
+            new CANNON.Vec3(blockSize.x / 2, blockSize.y / 2, blockSize.z / 2)
+          ),
+          position: new CANNON.Vec3(0, currentY, 0),
+        });
+        world.addBody(body);
+
+        blocks.push({ mesh, body });
+        currentY += blockSize.y;
+      }
+
+      function spawnMovingBlock() {
+        if (gameOver) return;
+        const color = new THREE.Color(`hsl(${Math.random() * 360}, 70%, 60%)`);
+        const geo = new THREE.BoxGeometry(blockSize.x, blockSize.y, blockSize.z);
+        const mat = new THREE.MeshStandardMaterial({ color });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(0, currentY + 3, 0);
+        scene.add(mesh);
+
+        const body = new CANNON.Body({
+          mass: 1,
+          shape: new CANNON.Box(
+            new CANNON.Vec3(blockSize.x / 2, blockSize.y / 2, blockSize.z / 2)
+          ),
+          position: new CANNON.Vec3(0, currentY + 3, 0),
+          type: CANNON.Body.KINEMATIC,
+        });
+        world.addBody(body);
+
+        currentBlock = { mesh, body, swingPhase: Math.random() * Math.PI * 2 };
+      }
+
+      function dropBlock() {
+        if (gameOver || !currentBlock) return;
+
+        const dropX = currentBlock.body.position.x;
+        const dropZ = currentBlock.body.position.z;
+        const dropThreshold = 3.0;
+
+        // ubah ke dynamic agar bisa jatuh
+        currentBlock.body.type = CANNON.Body.DYNAMIC;
+        currentBlock.body.updateMassProperties();
+
+        // 🔥 Tambahkan event listener untuk deteksi tabrakan dengan tanah
+        currentBlock.body.addEventListener("collide", (e) => {
+          if (e.body === groundBody) {
+            triggerGameOver();
+          }
+        });
+
+        blocks.push(currentBlock);
+        currentBlock = null;
+        score++;
+        document.getElementById("score").textContent = `Score: ${score}`;
+        currentY += blockSize.y;
+
+        // jika jauh dari tower
+        if (Math.abs(dropX) > dropThreshold || Math.abs(dropZ) > dropThreshold) {
+          if (pendingGameOverTimeout) clearTimeout(pendingGameOverTimeout);
+          pendingGameOverTimeout = setTimeout(() => {
+            pendingGameOverTimeout = null;
+            triggerGameOver();
+          }, 800);
+          return;
+        }
+
+        setTimeout(spawnMovingBlock, 700);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        world.step(1 / 60);
+
+        if (currentBlock && !gameOver) {
+          swingTime += 0.02 * swingSpeed;
+          const pos = currentBlock.body.position;
+          pos.x = Math.sin(swingTime + currentBlock.swingPhase) * swingAmplitude;
+          pos.y = currentY + 3;
+        }
+
+        for (const { mesh, body } of blocks) {
+          mesh.position.copy(body.position);
+          mesh.quaternion.copy(body.quaternion);
+        }
+        if (currentBlock) {
+          currentBlock.mesh.position.copy(currentBlock.body.position);
+          currentBlock.mesh.quaternion.copy(currentBlock.body.quaternion);
+        }
+
+        const targetHeight = Math.max(8, currentY + 4);
+        camera.position.y = targetHeight;
+        camera.position.z = 12 + currentY * 0.8;
+        camera.lookAt(0, currentY / 2, 0);
+
+        if (!gameOver) checkGameOver();
+
+        renderer.render(scene, camera);
+      }
+
+      function checkGameOver() {
+        for (const { body } of blocks) {
+          const { x, y, z } = body.position;
+          if (Math.abs(x) > 8 || Math.abs(z) > 8 || y < -1) {
+            triggerGameOver();
+            return;
+          }
+
+          const quat = body.quaternion;
+          const euler = new THREE.Euler().setFromQuaternion(
+            new THREE.Quaternion(quat.x, quat.y, quat.z, quat.w)
+          );
+          const tilt = Math.abs(euler.x) + Math.abs(euler.z);
+          if (tilt > 0.6) {
+            triggerGameOver();
+            return;
+          }
+        }
+      }
+
+      function triggerGameOver() {
+        if (gameOver) return;
+        gameOver = true;
+
+        renderer.domElement.removeEventListener("pointerdown", dropBlock);
+        document.getElementById("finalScore").textContent = `Tower Height: ${score}`;
+        document.getElementById("gameover").style.display = "flex";
+      }
+
+      function restartGame() {
+        if (pendingGameOverTimeout) {
+          clearTimeout(pendingGameOverTimeout);
+          pendingGameOverTimeout = null;
+        }
+        document.getElementById("gameover").style.display = "none";
+
+        for (const { mesh, body } of blocks) {
+          scene.remove(mesh);
+          world.removeBody(body);
+        }
+        blocks = [];
+
+        if (currentBlock) {
+          scene.remove(currentBlock.mesh);
+          world.removeBody(currentBlock.body);
+          currentBlock = null;
+        }
+
+        score = 0;
+        currentY = 0.25;
+        gameOver = false;
+        document.getElementById("score").textContent = `Score: ${score}`;
+
+        renderer.domElement.removeEventListener("pointerdown", dropBlock);
+        renderer.domElement.addEventListener("pointerdown", dropBlock);
+
+        camera.position.set(7, 10, 12);
+        camera.lookAt(0, 2, 0);
+
+        spawnBase();
+        spawnMovingBlock();
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+    </script>
+  </body>
+</html>
