@@ -115,7 +115,7 @@
   <div id="combo"></div>
   <div id="tap-hint">[ TAP TO DROP ]</div>
   <div id="gameover">
-    <div id="go-title">SYSTEM FAIL</div>
+    <div id="go-title">GAME OVER</div>
     <div id="go-card">
       <div id="go-score-label">TOWER HEIGHT</div>
       <div id="finalScore">0</div>
@@ -240,6 +240,7 @@ const NEON=[0x00ffff,0xff00ff,0xffff00,0xff6600,0x00ff88,0xff0088,0x88ff00,0x008
 // sisi samping (4) = warna asli agak gelap
 // sisi atas (index 2) = lebih terang/bersinar
 // sisi bawah (index 3) = gelap
+function randColor(){ return NEON[Math.floor(Math.random()*NEON.length)]; }
 function mkMats(color){
   const c=new THREE.Color(color);
   // Sisi samping — warna dasar
@@ -255,7 +256,7 @@ function mkMats(color){
 /* ── Game state ── */
 let scene,camera,renderer,world,groundBody,movingLight;
 let blocks=[],currentBlock=null,gameOver=false;
-let score=0,combo=0,currentY=.25,colorIdx=0;
+let score=0,combo=0,currentY=.25,colorIdx=Math.floor(Math.random()*8);
 let pendingGO=null,lastTS=0,physAccum=0;
 const SWING_SPD=1.5, SWING_AMP=5;
 
@@ -319,7 +320,7 @@ function init(){
 }
 
 function spawnBase(){
-  const col=NEON[colorIdx++%NEON.length];
+  const col=randColor();
   const m=new THREE.Mesh(shGeo,mkMats(col));
   m.position.y=currentY; scene.add(m);
   const b=new CANNON.Body({mass:0,shape:new CANNON.Box(new CANNON.Vec3(BSIZ.x/2,BSIZ.y/2,BSIZ.z/2)),position:new CANNON.Vec3(0,currentY,0)});
@@ -330,7 +331,7 @@ function spawnBase(){
 
 function spawnMovingBlock(){
   if(gameOver) return;
-  const col=NEON[colorIdx++%NEON.length];
+  const col=randColor();
   const m=new THREE.Mesh(shGeo,mkMats(col));
   m.position.set(0,currentY+2.5,0); scene.add(m);
   movingLight.color.setHex(col);
