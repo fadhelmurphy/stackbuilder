@@ -85,9 +85,9 @@
       }
       const TIER = detectTier();
       const CFG = {
-        low:  { px: .65, parts: 0, iter: 4, emissive: .35 },
-        mid:  { px: 1,   parts: 4, iter: 6, emissive: .5  },
-        high: { px: Math.min(window.devicePixelRatio || 1, 2), parts: 7, iter: 8, emissive: .7 },
+        low:  { px: .65, parts: 0, iter: 4, emissive: .7  },
+        mid:  { px: 1,   parts: 4, iter: 6, emissive: .9  },
+        high: { px: Math.min(window.devicePixelRatio || 1, 2), parts: 7, iter: 8, emissive: 1.1 },
       }[TIER];
       const PHYS_STEP = 1 / 60;
 
@@ -150,23 +150,29 @@
       function spawnPart(x, y, hex) {
         if (!CFG.parts) return;
         const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-        const packed=(r<<16)|(g<<8)|b, n=Math.min(CFG.parts, MAX_P-pCount);
+        const packed=(r<<16)|(g<<8)|b, n=Math.min(CFG.parts * 2, MAX_P-pCount);
         for (let i=0;i<n;i++) {
-          const idx=pCount++, a=Math.random()*Math.PI*2, s=1+Math.random()*2.5;
-          px_[idx]=x; py_[idx]=y; pvx[idx]=Math.cos(a)*s; pvy[idx]=Math.sin(a)*s-1.5;
-          pl[idx]=1; ps[idx]=1.5+Math.random()*2; pc[idx]=packed;
+          const idx=pCount++, a=Math.random()*Math.PI*2, s=2+Math.random()*4;
+          px_[idx]=x; py_[idx]=y; pvx[idx]=Math.cos(a)*s; pvy[idx]=Math.sin(a)*s-2;
+          pl[idx]=1; ps[idx]=3+Math.random()*4; pc[idx]=packed;
         }
       }
       function tickPart() {
         pCtx.clearRect(0,0,pCanvas.width,pCanvas.height);
         let alive = 0;
         for (let i=0;i<pCount;i++) {
-          pl[i]-=.055; if (pl[i]<=0) continue;
-          px_[i]+=pvx[i]; py_[i]+=pvy[i]; pvy[i]+=.1;
+          pl[i]-=.04; if (pl[i]<=0) continue;
+          px_[i]+=pvx[i]; py_[i]+=pvy[i]; pvy[i]+=.12;
           if (alive!==i){px_[alive]=px_[i];py_[alive]=py_[i];pvx[alive]=pvx[i];pvy[alive]=pvy[i];pl[alive]=pl[i];ps[alive]=ps[i];pc[alive]=pc[i];}
           const rr=(pc[i]>>16)&255, gg=(pc[i]>>8)&255, bb=pc[i]&255, sz=Math.max(.1,ps[i]*pl[i]);
-          pCtx.globalAlpha=pl[i]; pCtx.fillStyle=`rgb(${rr},${gg},${bb})`;
+          const col = `rgb(${rr},${gg},${bb})`;
+          pCtx.globalAlpha = pl[i];
+          // glow layer
+          pCtx.shadowBlur = 10;
+          pCtx.shadowColor = col;
+          pCtx.fillStyle = col;
           pCtx.beginPath(); pCtx.arc(px_[i],py_[i],sz,0,Math.PI*2); pCtx.fill();
+          pCtx.shadowBlur = 0;
           alive++;
         }
         pCount=alive; pCtx.globalAlpha=1;
@@ -187,17 +193,23 @@
       // Shared geometry — satu BoxGeometry dipakai semua blok
       const sharedGeo = new THREE.BoxGeometry(BSIZ.x, BSIZ.y, BSIZ.z);
 
-      // Cache material per warna — max 8 warna, jadi max 8 material total
-      const matCache = new Map();
-      function getMat(color) {
-        if (matCache.has(color)) return matCache.get(color);
-        const mat = new THREE.MeshLambertMaterial({
-          color: color,
-          emissive: color,
-          emissiveIntensity: CFG.emissive,
-        });
-        matCache.set(color, mat);
-        return mat;
+      // Material per sisi dengan pencahayaan 3D:
+      // +x (kanan)  = terang (highlight)
+      // -x (kiri)   = gelap (shadow)
+      // +y (atas)   = paling terang
+      // -y (bawah)  = paling gelap
+      // +z (depan)  = medium terang
+      // -z (belakang) = medium gelap
+      function mkMat(color) {
+        const c = new THREE.Color(color);
+        const top   = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(1.0), emissive: c.clone().multiplyScalar(.55), emissiveIntensity: CFG.emissive });
+        const bot   = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.4),  emissive: c.clone().multiplyScalar(.1),  emissiveIntensity: CFG.emissive * .3 });
+        const right = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.85), emissive: c.clone().multiplyScalar(.4),  emissiveIntensity: CFG.emissive * .7 });
+        const left  = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.6),  emissive: c.clone().multiplyScalar(.25), emissiveIntensity: CFG.emissive * .5 });
+        const front = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.75), emissive: c.clone().multiplyScalar(.35), emissiveIntensity: CFG.emissive * .6 });
+        const back  = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.65), emissive: c.clone().multiplyScalar(.28), emissiveIntensity: CFG.emissive * .5 });
+        // BoxGeometry order: +x, -x, +y, -y, +z, -z
+        return [ right, left, top, bot, front, back ];
       }
 
       // ── Game state ──
@@ -277,7 +289,7 @@
 
       function spawnBase() {
         const col = randColor();
-        const mesh = new THREE.Mesh(sharedGeo, getMat(col));
+        const mesh = new THREE.Mesh(sharedGeo, mkMat(col));
         mesh.position.y = currentY;
         scene.add(mesh);
         const body = new CANNON.Body({
@@ -295,7 +307,7 @@
         if (gameOver) return;
         const col = randColor();
         if (moveMesh) { scene.remove(moveMesh); }
-        moveMesh = new THREE.Mesh(sharedGeo, getMat(col));
+        moveMesh = new THREE.Mesh(sharedGeo, mkMat(col));
         moveMesh.position.set(0, currentY + 2.5, 0);
         scene.add(moveMesh);
         movingLight.color.setHex(col);
@@ -441,8 +453,11 @@
         const go = document.getElementById('gameover');
         go.style.display = 'flex'; go.classList.add('visible');
         if (CFG.parts) {
-          spawnPart(window.innerWidth/2, window.innerHeight/2, '#ff0033');
-          spawnPart(window.innerWidth/2, window.innerHeight/2, '#ff00ff');
+          for (let i=0;i<3;i++) {
+            spawnPart(window.innerWidth/2, window.innerHeight/2, '#ff0033');
+            spawnPart(window.innerWidth/2, window.innerHeight/2, '#ff00ff');
+            spawnPart(window.innerWidth/2, window.innerHeight/2, '#ffff00');
+          }
         }
       }
 
