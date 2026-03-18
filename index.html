@@ -202,12 +202,13 @@
       // -z (belakang) = medium gelap
       function mkMat(color) {
         const c = new THREE.Color(color);
-        const top   = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(1.0), emissive: c.clone().multiplyScalar(.55), emissiveIntensity: CFG.emissive });
-        const bot   = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.4),  emissive: c.clone().multiplyScalar(.1),  emissiveIntensity: CFG.emissive * .3 });
-        const right = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.85), emissive: c.clone().multiplyScalar(.4),  emissiveIntensity: CFG.emissive * .7 });
-        const left  = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.6),  emissive: c.clone().multiplyScalar(.25), emissiveIntensity: CFG.emissive * .5 });
-        const front = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.75), emissive: c.clone().multiplyScalar(.35), emissiveIntensity: CFG.emissive * .6 });
-        const back  = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.65), emissive: c.clone().multiplyScalar(.28), emissiveIntensity: CFG.emissive * .5 });
+        const ei = CFG.emissive;
+        const top   = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(1.0),  emissive: c.clone().multiplyScalar(.55), emissiveIntensity: ei });
+        const bot   = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.65),  emissive: c.clone().multiplyScalar(.25), emissiveIntensity: ei * .6 });
+        const right = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.92),  emissive: c.clone().multiplyScalar(.45), emissiveIntensity: ei * .85 });
+        const left  = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.72),  emissive: c.clone().multiplyScalar(.32), emissiveIntensity: ei * .65 });
+        const front = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.85),  emissive: c.clone().multiplyScalar(.4),  emissiveIntensity: ei * .75 });
+        const back  = new THREE.MeshLambertMaterial({ color: c.clone().multiplyScalar(.78),  emissive: c.clone().multiplyScalar(.35), emissiveIntensity: ei * .7 });
         // BoxGeometry order: +x, -x, +y, -y, +z, -z
         return [ right, left, top, bot, front, back ];
       }
